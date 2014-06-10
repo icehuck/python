@@ -1,0 +1,64 @@
+#!/usr/bin/env python
+# This script will look for duplicate IP addresses, and if it finds them, it will display the VMID and the corresponding IP address
+#
+# checking for c version of ElementTree, if not use the python version
+try:
+    import xml.etree.cElementTree as ET
+except:
+    import xml.etree.ElementTree as ET
+import subprocess
+import sys
+
+
+def list_of_ips(xml_list):
+    """This function will build a list of all IP's from onevm, and returns them as the  list ip_address. This function take the arguement xml_list which contains
+    all the information from the 'onevm list --xml' command. We set root to grab the xml information as a string, and loop through to find all the ip addresses."""
+    root = ET.fromstring(xml_list)
+    ip_address = []
+    for VM in root.findall('VM'):
+        search_for_ip = VM.findall('TEMPLATE/NIC/IP') #builds a list of IP locations
+        for ipadd in search_for_ip: #iterate through list to get actual IP values
+              ip_address.append(ipadd.text)
+    return ip_address
+
+
+def find_vm(xml, ip_list):
+    """This function will take a list of IP addresses(ip_list) and search (xml) to find the corresponding VMID. 'xml' contains the xml data from 'onevm list --xml'
+    command and ip_list contains the list of duplicated IP addresses. We set root to grab the xml information as a string, and create a list called iplist and
+    return a dictionary called machine_info"""
+    root = ET.fromstring(xml)
+    machine_info = {}
+    iplist = []
+    for VM in root.findall('VM'):
+        vmid = VM.find('ID').text
+        search_for_ip = VM.findall('TEMPLATE/NIC/IP') #builds a list of IP locations
+        for ipadd in search_for_ip: #iterate through `list to get actual IP values
+            iplist.append(ipadd.text)
+        for item in ip_list:
+            if item in iplist:
+               machine_info[vmid] = iplist
+        iplist = []
+    return machine_info
+
+
+def check_for_duplicates(ips):
+    """This function checks the list for duplicate entries, and returns only the entries that are duplicated"""
+    return list(set([x for x in ips if ips.count(x) > 1]))
+
+
+def main():
+    getxml = subprocess.Popen(["onevm list --xml"], stdout=subprocess.PIPE, shell=True)
+    std_out_xml, std_err_xml = getxml.communicate()
+    ip_list = list_of_ips(std_out_xml)
+    dupe_list = check_for_duplicates(ip_list)
+    if not dupe_list:
+        sys.exit(0)
+    else:
+        vm_info = find_vm(std_out_xml, dupe_list)
+        for key, value in vm_info.iteritems() :
+            print value[0], "Is duplicated on VM: ", key
+            #adding a exit 1, so if run by nagios, it can check exit status
+            sys.exit(1)
+
+if __name__ == "__main__":
+    main()

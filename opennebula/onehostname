@@ -1,0 +1,63 @@
+#!/usr/bin/env python
+#
+# This script will take the user specified VM ID #,and match return the domain name associated with the VM's IP Address.
+# Currently, this makes use of subprocess to get data from the "onevm" commands, and then uses the python xml module to 
+# process the returned xml. 
+import xml.etree.ElementTree as ET
+import subprocess
+from sys import argv
+from sys import exit
+import socket
+
+
+def find_vm(vm_id_num):
+    """This function will look for the specified vm id #, and return the corresponding IP address in a list called ip_address.
+    This fuctnion uses subprocess.Popen, to run the onevm list --xml command for the current user. Take the output
+    and pipe to std_out_xml, and use the communicate to read the PIPE. Divide the data into std_out and std_err""" 
+    getxml = subprocess.Popen(["onevm list --xml"], stdout=subprocess.PIPE, shell=True)
+    std_out_xml, std_err_xml = getxml.communicate()
+    root = ET.fromstring(std_out_xml)
+
+    ip_address = []
+    for VM in root.findall('VM'):
+        vmid = VM.find('ID').text
+        search_for_ip = VM.findall('TEMPLATE/NIC/IP') #builds a list of IP locations
+        
+        if vmid == vm_id_num:
+            for ipadd in search_for_ip: #iterate through list to get actual IP values
+                ip_address.append(ipadd.text)
+
+            return ip_address
+
+
+def get_hostname(ipaddr):
+    """This function does a reverse dns lookup and prints the first value[0] returned, which is the hostname"""
+    try:
+        reversed_dns = socket.gethostbyaddr(ipaddr)
+        print reversed_dns[0]
+    except socket.herror:
+        # Keeping python from issuing an exception, when not having a DNS record is valid.
+        print ipaddr, "No hostname is associated with IP"
+
+
+# Script took CLI arguements, need to make sure the right ammout was passed.
+if len(argv) == 2:
+    script_name, first_arg = argv
+    ips_to_lookup = find_vm(first_arg)
+
+    #Check to see if our list of IP's is emtpy. If it's empy, we didn't find the VMID
+    if not ips_to_lookup:
+        print "Looks like your VMID or VMNAME is non-existent. Please double-check via onevm list"
+        exit(1)
+
+    else:
+        for ip in ips_to_lookup:
+            get_hostname(ip)
+
+elif len(argv) == 1:
+    print "Error, you did not give the VMID. Use as follows : hostname.sh VMID"
+    exit(1)
+
+else:
+    print "Error, you gave more than one argument. Use as follows : hostname.sh VMID"
+    exit(1)
